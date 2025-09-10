@@ -9,7 +9,7 @@ export default function App() {
     return (
         <Container py="xl">
             <Stack gap="md" align="stretch">
-                <Title order={2}>Marvel Search (TSX)</Title>
+                <Title order={2}>Marvel Search</Title>
                 <SearchPicker onPick={setPicked} />
                 {picked && (
                     <>
