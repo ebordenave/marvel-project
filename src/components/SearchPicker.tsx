@@ -1,4 +1,5 @@
 // src/components/SearchPicker.tsx
+import { Text } from "@mantine/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
     Combobox,
@@ -17,22 +18,22 @@ export type Character = {
     thumbnailUrl?: string;
 };
 
-type Props = {
-    onPick?: (c: Character) => void;
-};
+type Props = { onPick?: (c: Character) => void };
 
 export default function SearchPicker({ onPick }: Props) {
     const combobox = useCombobox({
         onDropdownClose: () => combobox.resetSelectedOption(),
     });
 
-    const [value, setValue] = useState<string>("");
+    const [value, setValue] = useState("");
     const [debounced] = useDebouncedValue(value, 250);
-    const [loading, setLoading] = useState<boolean>(false);
+    const [loading, setLoading] = useState(false);
     const [results, setResults] = useState<Character[]>([]);
     const [error, setError] = useState<string | null>(null);
-
     const abortRef = useRef<AbortController | null>(null);
+    const [apiCallCount, setApiCallCount] = useState(0);
+
+
 
     useEffect(() => {
         setError(null);
@@ -43,12 +44,14 @@ export default function SearchPicker({ onPick }: Props) {
             return;
         }
 
-        // cancel previous
+        // cancel any in-flight request
         abortRef.current?.abort();
         const ctl = new AbortController();
         abortRef.current = ctl;
 
         setLoading(true);
+        setApiCallCount((count) => count + 1);
+
         fetch(`/api/marvel/characters?query=${encodeURIComponent(debounced)}`, {
             signal: ctl.signal,
         })
@@ -60,15 +63,13 @@ export default function SearchPicker({ onPick }: Props) {
                 setResults(data);
                 combobox.openDropdown();
             })
-            .catch((e: unknown) => {
-                if ((e as { name?: string })?.name !== "AbortError") {
-                    setError("Could not load results");
-                }
+            .catch((e: any) => {
+                if (e?.name !== "AbortError") setError("Could not load results");
             })
             .finally(() => setLoading(false));
 
         return () => ctl.abort();
-    }, [debounced, combobox]);
+    }, [debounced]);
 
     function handlePickById(id: string) {
         const item = results.find((r) => String(r.id) === id);
@@ -112,11 +113,12 @@ export default function SearchPicker({ onPick }: Props) {
                     rightSection={loading ? <Loader size="sm" /> : null}
                     onKeyDown={(e) => {
                         if (e.key === "Enter" && results[0]) {
-                            handlePickById(String(results[0].id));
+                            handlePickById(String(results[0].id)); // choose top result
                         }
                     }}
                 />
             </Combobox.Target>
+            API calls made: {apiCallCount}
 
             <Combobox.Dropdown>
                 <Combobox.Options>{options}</Combobox.Options>
