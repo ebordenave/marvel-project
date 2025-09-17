@@ -1,6 +1,5 @@
 // src/components/SearchPicker.tsx
-import { Text } from "@mantine/core";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
     Combobox,
     useCombobox,
@@ -10,13 +9,7 @@ import {
     Group,
     Avatar,
 } from "@mantine/core";
-import { useDebouncedValue } from "@mantine/hooks";
-
-export type Character = {
-    id: number;
-    name: string;
-    thumbnailUrl?: string;
-};
+import { useCharacterSearch, Character } from "../hooks/useCharacterSearch";
 
 type Props = { onPick?: (c: Character) => void };
 
@@ -26,50 +19,18 @@ export default function SearchPicker({ onPick }: Props) {
     });
 
     const [value, setValue] = useState("");
-    const [debounced] = useDebouncedValue(value, 250);
-    const [loading, setLoading] = useState(false);
-    const [results, setResults] = useState<Character[]>([]);
-    const [error, setError] = useState<string | null>(null);
-    const abortRef = useRef<AbortController | null>(null);
-    const [apiCallCount, setApiCallCount] = useState(0);
+    // use hook: min 3 chars, 450ms debounce, limit 10
+    const { results, loading, error, apiCallCount } = useCharacterSearch(value, {
+        minChars: 3,
+        debounceMs: 450,
+        limit: 10,
+    });
 
-
-
-    useEffect(() => {
-        setError(null);
-
-        if (debounced.trim().length < 2) {
-            setResults([]);
-            setLoading(false);
-            return;
-        }
-
-        // cancel any in-flight request
-        abortRef.current?.abort();
-        const ctl = new AbortController();
-        abortRef.current = ctl;
-
-        setLoading(true);
-        setApiCallCount((count) => count + 1);
-
-        fetch(`/api/marvel/characters?query=${encodeURIComponent(debounced)}`, {
-            signal: ctl.signal,
-        })
-            .then(async (r) => {
-                if (!r.ok) throw new Error(`HTTP ${r.status}`);
-                return (await r.json()) as Character[];
-            })
-            .then((data) => {
-                setResults(data);
-                combobox.openDropdown();
-            })
-            .catch((e: any) => {
-                if (e?.name !== "AbortError") setError("Could not load results");
-            })
-            .finally(() => setLoading(false));
-
-        return () => ctl.abort();
-    }, [debounced]);
+    // open dropdown when results appear
+    if (!loading && results.length > 0) {
+        // safe to call on render; combobox.openDropdown is noop if already open
+        combobox.openDropdown();
+    }
 
     function handlePickById(id: string) {
         const item = results.find((r) => String(r.id) === id);
@@ -81,10 +42,8 @@ export default function SearchPicker({ onPick }: Props) {
 
     const options = useMemo(() => {
         if (error) return <Combobox.Empty>{error}</Combobox.Empty>;
-        if (loading && results.length === 0)
-            return <Combobox.Empty>Loading…</Combobox.Empty>;
-        if (!loading && results.length === 0)
-            return <Combobox.Empty>No results</Combobox.Empty>;
+        if (loading && results.length === 0) return <Combobox.Empty>Loading…</Combobox.Empty>;
+        if (!loading && results.length === 0) return <Combobox.Empty>No results</Combobox.Empty>;
 
         return results.map((item) => (
             <Combobox.Option key={item.id} value={String(item.id)}>
@@ -99,26 +58,28 @@ export default function SearchPicker({ onPick }: Props) {
     }, [results, loading, error, value]);
 
     return (
-        <Combobox
-            store={combobox}
-            withinPortal={false}
-            onOptionSubmit={handlePickById}
-        >
+        <Combobox store={combobox} withinPortal={false} onOptionSubmit={handlePickById}>
             <Combobox.Target>
                 <TextInput
                     value={value}
                     onChange={(e) => setValue(e.currentTarget.value)}
-                    onFocus={() => combobox.openDropdown()}
+                    onFocus={() => (results.length ? combobox.openDropdown() : undefined)}
                     placeholder="Search Marvel characters…"
+                    autoComplete="off"
                     rightSection={loading ? <Loader size="sm" /> : null}
                     onKeyDown={(e) => {
                         if (e.key === "Enter" && results[0]) {
-                            handlePickById(String(results[0].id)); // choose top result
+                            handlePickById(String(results[0].id)); // choose top result on Enter
                         }
                     }}
                 />
             </Combobox.Target>
-            API calls made: {apiCallCount}
+
+            {/* Debugging: API calls made (optional) */}
+            {/* Remove or hide in production */}
+            <div style={{ fontSize: 12, color: "#666", padding: "6px 8px" }}>
+                API calls: {apiCallCount}
+            </div>
 
             <Combobox.Dropdown>
                 <Combobox.Options>{options}</Combobox.Options>
